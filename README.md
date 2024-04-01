@@ -14,6 +14,7 @@ Using lazy.nvim:
     end,
     keys = {
         { "<leader>s3r", ":Telescope telescope_s3 read_object<CR>", desc = "[S3] [R]ead" },
+        { "<leader>s3w", ":Telescope telescope_s3 write_object<CR>", desc = "[S3] [W]rite" },
     },
 }
 ```
@@ -34,11 +35,16 @@ file to a temp location and will open in a new buffer.
 
 ### Write object
 
-Coming soon!
+Toy can run `:Telescope telescope_s3 write_object` or use the above keypmap `<leader>s3w`
+which will open a telescope selector for buckets, after selecting the bucket it will open
+an input to insert the key to which the current buffer will be uploaded to in the bucket.
+Note that you can use partitioning here, e.g. if you selected a bucket `plugins` and the
+key will be `nvim/lua/telescope.lua` then the eventual S3 path will be:
+`s3://plugins/nvim/lua/telescope.lua`.
 
 ## Roadmap
 
-- [ ] Writing objects
+- [ ] Deleting objects
 - [ ] Gzip objects
 
 And maybe more?

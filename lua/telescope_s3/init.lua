@@ -14,7 +14,7 @@ local function ft(key)
     return parts[#parts]
 end
 
-local run = function(command)
+local function run(command)
     local handle = io.popen(command)
     if handle == nil then
         vim.notify("could not run command " .. command)
@@ -26,7 +26,7 @@ local run = function(command)
     return result
 end
 
-local list_objects = function(opts, bucket)
+local function list_objects(opts, bucket)
     local cmd = {
         "aws",
         "s3api",
@@ -82,7 +82,7 @@ local list_objects = function(opts, bucket)
         :find()
 end
 
-M.read_object = function(opts)
+local function list_buckets()
     local cmd = {
         "aws",
         "s3api",
@@ -94,8 +94,25 @@ M.read_object = function(opts)
     if results == nil then
         return
     end
-    results = vim.fn.json_decode(results)
+    return vim.fn.json_decode(results)
+end
 
+local function put_object(bucket, key, object)
+    local cmd = {
+        "aws",
+        "s3",
+        "cp",
+        object,
+        "s3://" .. bucket .. "/" .. key,
+    }
+    return run(vim.fn.join(cmd, " "))
+end
+
+M.read_object = function(opts)
+    local results = list_buckets()
+    if results == nil then
+        return
+    end
     pickers
         .new(opts, {
             finder = finders.new_table({
@@ -116,6 +133,48 @@ M.read_object = function(opts)
                     local selection = action_state.get_selected_entry()
                     actions.close(prompt_bufnr)
                     list_objects(opts, selection.display)
+                end)
+                return true
+            end,
+        })
+        :find()
+end
+
+M.write_object = function(opts)
+    local results = list_buckets()
+    if results == nil then
+        return
+    end
+    pickers
+        .new(opts, {
+            finder = finders.new_table({
+                results = results,
+
+                entry_maker = function(entry)
+                    return {
+                        display = entry.name,
+                        ordinal = entry.name,
+                    }
+                end,
+            }),
+
+            sorter = config.generic_sorter(opts),
+
+            attach_mappings = function(prompt_bufnr)
+                actions.select_default:replace(function()
+                    local selection = action_state.get_selected_entry()
+                    actions.close(prompt_bufnr)
+                    vim.ui.input({ prompt = "Object key" }, function(res)
+                        if res == nil then
+                            return
+                        end
+                        local buffer = vim.fn.expand("%:p")
+                        local suffix = ft(buffer)
+                        local result = put_object(selection.display, res, buffer .. "." .. suffix)
+                        if result then
+                            vim.notify(result, vim.log.levels.INFO, opts)
+                        end
+                    end)
                 end)
                 return true
             end,
