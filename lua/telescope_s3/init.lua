@@ -4,8 +4,6 @@ local config = require("telescope.config").values
 local finders = require("telescope.finders")
 local pickers = require("telescope.pickers")
 
-local M = {}
-
 local function ft(key)
     local parts = {}
     for part in string.gmatch(key, "[^%.]+") do
@@ -26,7 +24,37 @@ local function run(command)
     return result
 end
 
-local function list_objects(opts, bucket)
+local function get_object(bucket, key)
+    local out = { os.tmpname(), ft(key) }
+    out = vim.fn.join(out, ".")
+    local cmd = {
+        "aws",
+        "s3api",
+        "get-object",
+        "--bucket",
+        bucket,
+        "--key",
+        key,
+        out,
+    }
+    run(vim.fn.join(cmd, " "))
+    vim.cmd("edit " .. out)
+end
+
+local function delete_object(bucket, key)
+    local cmd = {
+        "aws",
+        "s3api",
+        "delete-object",
+        "--bucket",
+        bucket,
+        "--key",
+        key,
+    }
+    run(vim.fn.join(cmd, " "))
+end
+
+local function list_objects(opts, bucket, handler)
     local cmd = {
         "aws",
         "s3api",
@@ -60,21 +88,8 @@ local function list_objects(opts, bucket)
             attach_mappings = function(prompt_bufnr)
                 actions.select_default:replace(function()
                     local selection = action_state.get_selected_entry()
-                    local out = { os.tmpname(), ft(selection.value.key) }
-                    out = vim.fn.join(out, ".")
                     actions.close(prompt_bufnr)
-                    cmd = {
-                        "aws",
-                        "s3api",
-                        "get-object",
-                        "--bucket",
-                        bucket,
-                        "--key",
-                        selection.value.key,
-                        out,
-                    }
-                    run(vim.fn.join(cmd, " "))
-                    vim.cmd("edit " .. out)
+                    handler(bucket, selection.value.key)
                 end)
                 return true
             end,
@@ -97,18 +112,29 @@ local function list_buckets()
     return vim.fn.json_decode(results)
 end
 
-local function put_object(bucket, key, object)
-    local cmd = {
-        "aws",
-        "s3",
-        "cp",
-        object,
-        "s3://" .. bucket .. "/" .. key,
-    }
-    return run(vim.fn.join(cmd, " "))
+local function put_object(opts, display)
+    vim.ui.input({ prompt = "Object key" }, function(res)
+        if res == nil then
+            return
+        end
+        local buffer = vim.fn.expand("%:p")
+        local suffix = ft(buffer)
+
+        local cmd = {
+            "aws",
+            "s3",
+            "cp",
+            buffer,
+            "s3://" .. display .. "/" .. res .. "." .. suffix,
+        }
+        local result = run(vim.fn.join(cmd, " "))
+        if result then
+            vim.notify(result, vim.log.levels.INFO, opts)
+        end
+    end)
 end
 
-M.read_object = function(opts)
+local function find_and_handle_object(opts, handler, handle_objects)
     local results = list_buckets()
     if results == nil then
         return
@@ -132,54 +158,30 @@ M.read_object = function(opts)
                 actions.select_default:replace(function()
                     local selection = action_state.get_selected_entry()
                     actions.close(prompt_bufnr)
-                    list_objects(opts, selection.display)
+                    if handle_objects then
+                        list_objects(opts, selection.display, handler)
+                    else
+                        handler(opts, selection.display)
+                    end
                 end)
                 return true
             end,
         })
         :find()
+end
+
+local M = {}
+
+M.read_object = function(opts)
+    find_and_handle_object(opts, get_object, true)
+end
+
+M.delete_object = function(opts)
+    find_and_handle_object(opts, delete_object, true)
 end
 
 M.write_object = function(opts)
-    local results = list_buckets()
-    if results == nil then
-        return
-    end
-    pickers
-        .new(opts, {
-            finder = finders.new_table({
-                results = results,
-
-                entry_maker = function(entry)
-                    return {
-                        display = entry.name,
-                        ordinal = entry.name,
-                    }
-                end,
-            }),
-
-            sorter = config.generic_sorter(opts),
-
-            attach_mappings = function(prompt_bufnr)
-                actions.select_default:replace(function()
-                    local selection = action_state.get_selected_entry()
-                    actions.close(prompt_bufnr)
-                    vim.ui.input({ prompt = "Object key" }, function(res)
-                        if res == nil then
-                            return
-                        end
-                        local buffer = vim.fn.expand("%:p")
-                        local suffix = ft(buffer)
-                        local result = put_object(selection.display, res, buffer .. "." .. suffix)
-                        if result then
-                            vim.notify(result, vim.log.levels.INFO, opts)
-                        end
-                    end)
-                end)
-                return true
-            end,
-        })
-        :find()
+    find_and_handle_object(opts, put_object, false)
 end
 
 return M
