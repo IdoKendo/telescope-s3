@@ -85,6 +85,8 @@ local function list_objects(opts, bucket, handler)
                 end,
             }),
 
+            sorter = config.generic_sorter(opts),
+
             attach_mappings = function(prompt_bufnr)
                 actions.select_default:replace(function()
                     local selection = action_state.get_selected_entry()
